@@ -1,0 +1,31 @@
+#wavewrapper {
+	display: flex;
+	flex-direction: row;
+}
+
+#waveview {
+	display: flex;
+	flex-direction: column;
+}
+
+#resize {
+	width: 50px;
+	position: relative;
+}
+
+#resize:hover {
+	cursor: pointer;
+	background-color: rgba(0, 0, 0, 0.125);
+}
+
+#resize::after {
+	content: "";
+	background-image: url(sizebar.svg);
+	background-size: cover;
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	bottom: 0;
+	opacity: 0.33;
+}
