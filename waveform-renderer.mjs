@@ -11,12 +11,44 @@ const createShader = (gl, source, type) => {
     return shader;
 };
 
+const createProgram = (gl, vertSource, fragSource) => {
+    const vertShader = createShader(gl, vertSource, gl.VERTEX_SHADER);
+    const fragShader = createShader(gl, fragSource, gl.FRAGMENT_SHADER);
+
+    const program = gl.createProgram();
+    gl.attachShader(program, vertShader);
+    gl.attachShader(program, fragShader);
+    gl.linkProgram(program);
+
+    const programInfo = {
+        uniforms: {},
+        attribs: {},
+        program
+    }
+
+    // Construct maps of uniform + attrib locations for convenience
+    const numActiveUniforms = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS);
+    for (let i = 0; i < numActiveUniforms; i++) {
+        const uniformInfo = gl.getActiveUniform(program, i);
+        programInfo.uniforms[uniformInfo.name] =  gl.getUniformLocation(program, uniformInfo.name);
+    }
+
+    const numActiveAttributes = gl.getProgramParameter(program, gl.ACTIVE_ATTRIBUTES);
+    for (let i = 0; i < numActiveAttributes; i++) {
+        const attribInfo = gl.getActiveAttrib(program, i);
+        programInfo.attribs[attribInfo.name] =  gl.getAttribLocation(program, attribInfo.name);
+    }
+
+    return programInfo;
+}
+
 class WaveformRenderer {
     constructor (canvas) {
         this._canvas = canvas;
         this._gl = null;
         this._samples = null;
         this._textureData = null;
+        this._size = [0, 0];
 
         this._createContext();
     }
@@ -31,50 +63,28 @@ class WaveformRenderer {
             this._canvas.getContext('experimental-webgl', contextAttributes);
         this._gl = gl;
 
-        const vertShader = createShader(gl, VERTEX_SOURCE, gl.VERTEX_SHADER);
-        const fragShader = createShader(gl, FRAGMENT_SOURCE, gl.FRAGMENT_SHADER);
-
-        console.log(FRAGMENT_SOURCE);
-
-        const program = gl.createProgram();
-        gl.attachShader(program, vertShader);
-        gl.attachShader(program, fragShader);
-        gl.linkProgram(program);
-        this._shader = program;
-
-        // Construct maps of uniform + attrib locations for convenience
-        this._uniforms = new Map();
-        this._attribs = new Map();
-
-        const numActiveUniforms = gl.getProgramParameter(
-            program,
-            gl.ACTIVE_UNIFORMS
-        );
-        for (let i = 0; i < numActiveUniforms; i++) {
-            const uniformInfo = gl.getActiveUniform(program, i);
-            this._uniforms.set(
-                uniformInfo.name,
-                gl.getUniformLocation(program, uniformInfo.name)
-            );
+        // Use minimum precision necessary to guarantee at least 16 bits of precision
+        let floatPrecisionString;
+        for (const precisionType of [gl.LOW_FLOAT, gl.MEDIUM_FLOAT, gl.HIGH_FLOAT]) {
+            const precisionBits = gl.getShaderPrecisionFormat(gl.FRAGMENT_SHADER, precisionType).precision;
+            if (precisionBits >= 16) {
+                switch (precisionType) {
+                    case gl.LOW_FLOAT: floatPrecisionString = 'precision lowp float;\n'; break;
+                    case gl.MEDIUM_FLOAT: floatPrecisionString = 'precision mediump float;\n'; break;
+                    case gl.HIGH_FLOAT: floatPrecisionString = 'precision highp float;\n'; break;
+                }
+                break;
+            }
         }
 
-        const numActiveAttributes = gl.getProgramParameter(
-            program,
-            gl.ACTIVE_ATTRIBUTES
-        );
-        for (let i = 0; i < numActiveAttributes; i++) {
-            const attribInfo = gl.getActiveAttrib(program, i);
-            this._attribs.set(
-                attribInfo.name,
-                gl.getAttribLocation(program, attribInfo.name)
-            );
-        }
+        this._audioLevelShader = createProgram(gl, VERTEX_SOURCE, floatPrecisionString + AUDIO_CALC_SOURCE);
+        this._waveformShader = createProgram(gl, VERTEX_SOURCE, floatPrecisionString + FRAGMENT_SOURCE);
 
         const buffer = gl.createBuffer();
-        gl.enableVertexAttribArray(this._attribs.get('a_position'));
+        gl.enableVertexAttribArray(this._waveformShader.attribs.a_position);
         gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
         gl.vertexAttribPointer(
-            this._attribs.get('a_position'),
+            this._waveformShader.attribs.a_position,
             2, // vec2
             gl.FLOAT,
             false,
@@ -96,17 +106,25 @@ class WaveformRenderer {
             gl.STATIC_DRAW
         );
 
-        gl.useProgram(program);
         gl.activeTexture(gl.TEXTURE0);
-        gl.uniform1i(this._uniforms.get('u_image0'), 0);
 
         this._maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE);
-        this._texture = gl.createTexture();
+
+        // create once for better performance (this is uploaded as the texture for the audio level framebuffer)
+        this._fullRow = new Uint8Array(this._maxTextureSize * 4);
+
+        this._sampleTexture = gl.createTexture();
+        this._audioLevelTexture = gl.createTexture();
+        this._audioLevelFramebuffer = gl.createFramebuffer();
+
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._audioLevelFramebuffer);
+        gl.bindTexture(gl.TEXTURE_2D, this._audioLevelTexture);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._audioLevelTexture, 0);
     }
 
     setAudioSamples (samples) {
         const gl = this._gl;
-        gl.bindTexture(gl.TEXTURE_2D, this._texture);
+        gl.bindTexture(gl.TEXTURE_2D, this._sampleTexture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
@@ -153,9 +171,6 @@ class WaveformRenderer {
             gl.UNSIGNED_BYTE,
             this._textureData
         );
-
-        gl.uniform2fv(this._uniforms.get('u_textureSize'), this._textureSize);
-        gl.uniform1f(this._uniforms.get('u_numSamples'), samples.length);
     }
 
     resize (width, height) {
@@ -163,19 +178,55 @@ class WaveformRenderer {
         const canvas = this._canvas;
         canvas.width = width;
         canvas.height = height;
-        gl.uniform2f(this._uniforms.get('u_canvasSize'), width, height);
-        gl.viewport(0, 0, width, height);
+
+        this._size[0] = width;
+        this._size[1] = height;
+
+        gl.bindTexture(gl.TEXTURE_2D, this._audioLevelTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, this._fullRow);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._audioLevelFramebuffer);
+        gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._audioLevelTexture, 0);
+
         this.draw();
     }
 
     draw () {
         const gl = this._gl;
+
+        // Calculate audio levels for each pixel column
+        gl.bindFramebuffer(gl.FRAMEBUFFER, this._audioLevelFramebuffer);
+        gl.bindTexture(gl.TEXTURE_2D, this._sampleTexture);
+
+        gl.useProgram(this._audioLevelShader.program);
+        gl.uniform2fv(this._audioLevelShader.uniforms.u_canvasSize, this._size);
+        gl.uniform2fv(this._audioLevelShader.uniforms.u_textureSize, this._textureSize);
+        gl.uniform1f(this._audioLevelShader.uniforms.u_numSamples, this._samples.length);
+        gl.uniform1i(this._audioLevelShader.uniforms.u_image0, 0);
+
+        gl.viewport(0, 0, this._size[0], 1);
+        gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+        // Draw columns
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.bindTexture(gl.TEXTURE_2D, this._audioLevelTexture);
+
+        gl.useProgram(this._waveformShader.program);
+        gl.uniform1i(this._waveformShader.uniforms.u_image0, 0);
+        gl.uniform2fv(this._waveformShader.uniforms.u_canvasSize, this._size);
+
+        gl.viewport(0, 0, this._size[0], this._size[1]);
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
     destroy () {
         const gl = this._gl;
-        gl.deleteTexture(this._texture);
+        gl.deleteTexture(this._sampleTexture);
+        gl.deleteTexture(this._audioLevelTexture);
+        gl.deleteFramebuffer(this._audioLevelFramebuffer);
         this._gl = null;
     }
 }

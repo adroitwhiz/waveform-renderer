@@ -1,11 +1,12 @@
 import WaveformRenderer from './waveform-renderer.mjs';
 import handleMouseEvents from './mouse-evt.mjs';
 
-const audioContext = new window.AudioContext();
+const audioContext = new window.AudioContext({sampleRate: 8000});
 
 Promise.all([
 	fetch('vertex.glsl').then(response => response.text()).then(text => {window.VERTEX_SOURCE = text}),
-	fetch('fragment.glsl').then(response => response.text()).then(text => {window.FRAGMENT_SOURCE = text})
+	fetch('fragment.glsl').then(response => response.text()).then(text => {window.FRAGMENT_SOURCE = text}),
+	fetch('audio-levels.glsl').then(response => response.text()).then(text => {window.AUDIO_CALC_SOURCE = text})
 ]).then(() => {
 	const renderer = new WaveformRenderer(document.getElementById('wavecanvas'));
 
