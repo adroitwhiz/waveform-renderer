@@ -40,24 +40,30 @@ Promise.all([
 			audioContext.decodeAudioData(
 				reader.result,
 				buf => {
-					const audioDecodeTime = performance.now();
-
-					const channelData = buf.getChannelData(0);
-					const now = performance.now();
-					renderer.setAudioSamples(channelData);
-					renderer.resize(900, 350);
-					renderer.draw();
-
-					const drawTime = performance.now();
-
 					perfClear();
-					perfLog(`${buf.duration.toFixed(1)} seconds of audio (${channelData.length} samples)`);
-					perfLog(`File loaded in ${(fileLoadTime - startTime).toFixed(1)} ms`);
-					perfLog(`Audio decoded in ${(audioDecodeTime - fileLoadTime).toFixed(1)} ms`);
-					perfLog(`Waveform drawn in ${(drawTime - audioDecodeTime).toFixed(1)} ms`);
+
+					try {
+						const audioDecodeTime = performance.now();
+
+						const channelData = buf.getChannelData(0);
+						const now = performance.now();
+						renderer.setAudioSamples(channelData);
+						renderer.resize(900, 350);
+						renderer.draw();
+
+						const drawTime = performance.now();
+
+						perfLog(`${buf.duration.toFixed(1)} seconds of audio (${channelData.length} samples)`);
+						perfLog(`File loaded in ${(fileLoadTime - startTime).toFixed(1)} ms`);
+						perfLog(`Audio decoded in ${(audioDecodeTime - fileLoadTime).toFixed(1)} ms`);
+						perfLog(`Waveform drawn in ${(drawTime - audioDecodeTime).toFixed(1)} ms`);
+					} catch (err) {
+						perfLog(`Failed to draw waveform: ${err.message}`);
+					}
+
 				},
 				() => {
-					console.error('Failed to decode audio');
+					perfLog('Failed to decode audio');
 				}
 			);
 		})
