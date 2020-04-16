@@ -36,6 +36,9 @@ Promise.all([
 
 		const reader = new FileReader();
 		reader.addEventListener('load', () => {
+			perfClear();
+			perfLog('Loading...');
+
 			const fileLoadTime = performance.now();
 			audioContext.decodeAudioData(
 				reader.result,
