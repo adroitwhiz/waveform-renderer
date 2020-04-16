@@ -117,6 +117,9 @@ class WaveformRenderer {
         this._audioLevelTexture = gl.createTexture();
         this._audioLevelFramebuffer = gl.createFramebuffer();
 
+        this._scrollRangeStart = 0;
+        this._scrollRangeEnd = 1;
+
         gl.bindFramebuffer(gl.FRAMEBUFFER, this._audioLevelFramebuffer);
         gl.bindTexture(gl.TEXTURE_2D, this._audioLevelTexture);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._audioLevelTexture, 0);
@@ -191,7 +194,14 @@ class WaveformRenderer {
         gl.bindFramebuffer(gl.FRAMEBUFFER, this._audioLevelFramebuffer);
         gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this._audioLevelTexture, 0);
 
-        this.draw();
+        if (this._samples) this.draw();
+    }
+
+    setScrollRange(start, end) {
+        this._scrollRangeStart = start;
+        this._scrollRangeEnd = end;
+
+        if (this._samples) this.draw();
     }
 
     draw () {
@@ -204,6 +214,7 @@ class WaveformRenderer {
         gl.useProgram(this._audioLevelShader.program);
         gl.uniform2fv(this._audioLevelShader.uniforms.u_canvasSize, this._size);
         gl.uniform2fv(this._audioLevelShader.uniforms.u_textureSize, this._textureSize);
+        gl.uniform2f(this._audioLevelShader.uniforms.u_scrollRange, this._scrollRangeStart, this._scrollRangeEnd);
         gl.uniform1f(this._audioLevelShader.uniforms.u_numSamples, this._samples.length);
         gl.uniform1i(this._audioLevelShader.uniforms.u_image0, 0);
 

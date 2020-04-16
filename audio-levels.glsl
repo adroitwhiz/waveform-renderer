@@ -1,5 +1,6 @@
 uniform sampler2D u_image0;
 uniform vec2 u_textureSize;
+uniform vec2 u_scrollRange;
 uniform float u_numSamples;
 uniform vec2 u_canvasSize;
 varying vec2 v_texCoord;
@@ -74,7 +75,8 @@ vec2 downsample(in float x) {
 void main () {
 	//vec2 sampleValue = gatherSamplesAtX(v_texCoord.x);
 	//float sampleValue = getAudioSampleLinear(v_texCoord.x * u_numSamples);
-	vec2 sampleValue = downsample(v_texCoord.x);
+	float coord = (v_texCoord.x * (u_scrollRange.y - u_scrollRange.x)) + u_scrollRange.x;
+	vec2 sampleValue = downsample(coord);
 
 	gl_FragColor = vec4(sampleValue, 0.0, 1.0);
 	//gl_FragColor = vec4(v_texCoord, 0.0, 1.0);

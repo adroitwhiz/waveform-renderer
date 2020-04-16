@@ -1,21 +1,26 @@
-function handleMouseEvents (element, onStart, onEnd, onMove) {
+function handleMouseEvents (element, onStart, onEnd, onDrag, onMove) {
+	console.log(element);
 	let dragging = false;
 
 	element.addEventListener('mousedown', event => {
 		dragging = true;
-		onStart(event.clientX, event.clientY);
+		if (onStart) onStart(event.clientX, event.clientY);
 	}, false);
 
-	element.addEventListener('mouseup', event => {
+	document.addEventListener('mouseup', event => {
 		dragging = false;
-		onEnd(event.clientX, event.clientY);
+		if (onEnd) onEnd(event.clientX, event.clientY);
 	}, false);
 
-	document.addEventListener('mousemove', event => {
+	if (onDrag) document.addEventListener('mousemove', event => {
 		if (dragging) {
 			event.preventDefault();
-			onMove(event.clientX, event.clientY);
+			onDrag(event.clientX, event.clientY);
 		}
+	}, false);
+
+	if (onMove) document.addEventListener('mousemove', event => {
+		onMove(event.clientX, event.clientY);
 	}, false);
 }
 
